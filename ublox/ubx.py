@@ -6,6 +6,8 @@ import logging
 import serial
 from serial.tools import list_ports
 
+logging.basicConfig(level=logging.INFO)
+
 class UbxStream(object):
     def __init__(self, dev=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
@@ -55,13 +57,14 @@ class UbxStream(object):
             if(self._dev.open):
                 return self._baudrate
             else:
-                self.logger.error(("Port is closed.")
+                self.logger.error("Port is closed.")
         except AttributeError:
             self.logger.error("Serial connection has not been initialized or assigned a baudrate yet.")
 
 
     @baudrate.setter
     def baudrate(self,baudrate):
+        self.logger.info("Configuring baudrate to {}".format(baudrate))
         y = UbxMessage('06','00', msg_type="tx", rate=baudrate, version=self._version)
         try:
             if(self.dev.writable):
@@ -104,7 +107,7 @@ class UbxStream(object):
                         else:
                             counter = 0
                     except serial.serialutil.SerialException:
-                        self.logger.error("Somethig went wrong")
+                        self.logger.error("Something went wrong")
 
                 else:
                     if self._version == 3:
@@ -120,6 +123,7 @@ class UbxStream(object):
 
 
     def enable_message(self, msgClass, msgId):
+        self.logger.info("Enabling message Class: {} ID: {}".format(msgClass,msgId))
         msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 1, 0, 0, 0, 0])
         self.dev.write(msg.msg)
         if(self.__confirmation()):
@@ -127,6 +131,7 @@ class UbxStream(object):
 
 
     def disable_message(self, msgClass, msgId):
+        self.logger.info("Disabling message Class: {} ID: {}".format(msgClass,msgId))
         #msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 0, 0, 0, 0, 0])
         msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 0, 0, 0, 0, 0])
         self.dev.write(msg.msg)
@@ -177,6 +182,7 @@ class UbxStream(object):
     # class 0xF0: 0A, 09, 00, 01, 0D, 06, 02, 07, 03, 04, 41, 0F, 05, 08
     # class 0xF1: 00, 03, 04
     def disable_NMEA(self):
+        self.logger.info("Disabling all NMEA sentences")
         classes = [240, 241]
         ids1 = [10, 9, 0, 1, 13, 6, 2, 7, 3, 4, 65, 15, 5, 8]
         ids2 = [0, 3, 4]
