@@ -2,11 +2,14 @@ import struct
 import sys
 import time
 import binascii
+import logging
 import serial
 from serial.tools import list_ports
 
 class UbxStream(object):
-    def __init__(self, dev=None):
+    def __init__(self, dev=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+
         # pyserial 3.x has min requirement python2.7
         # read() returns string in 2.7, bytes object otherwise
         if sys.version_info[0] < 3:
@@ -27,7 +30,7 @@ class UbxStream(object):
             if(self._dev.open):
                 self.baudrate = dev.baudrate
         except AttributeError:
-            print("Serial Port is closed; open before using.")
+            self.logger.error("Serial Port is closed; open before using.")
 
 
     @property
@@ -43,7 +46,7 @@ class UbxStream(object):
         if(x in supported):
             self._dev = dev
         else:
-            print("This connection is not supported")
+            self.logger.error("This connection is not supported")
 
 
     @property
@@ -52,9 +55,9 @@ class UbxStream(object):
             if(self._dev.open):
                 return self._baudrate
             else:
-                print("Port is closed.")
+                self.logger.error(("Port is closed.")
         except AttributeError:
-            print("Serial connection has not been initialized or assigned a baudrate yet.")
+            self.logger.error("Serial connection has not been initialized or assigned a baudrate yet.")
 
 
     @baudrate.setter
@@ -68,16 +71,16 @@ class UbxStream(object):
                     self._dev.baudrate = baudrate
 
         except AttributeError:
-            print("Serial connection has not been initialized or assigned a port yet.")
+            self.logger.error("Serial connection has not been initialized or assigned a port yet.")
 
 
     def detect_ports(self):
         ports = list(serial.tools.list_ports.comports())
         if(len(ports) == 0):
-            print("No ports detected")
+            self.logger.error("No ports detected")
         else:
             for i in ports:
-                print(i.device)
+                self.logger.info(i.device)
 
 
     def read(self, timeout=3, reset=True):
@@ -101,7 +104,7 @@ class UbxStream(object):
                         else:
                             counter = 0
                     except serial.serialutil.SerialException:
-                        print("Somethig went wrong")
+                        self.logger.error("Somethig went wrong")
 
                 else:
                     if self._version == 3:
@@ -113,7 +116,7 @@ class UbxStream(object):
 
                     return UbxMessage(ubx_class, ubx_id, dev=self.dev, version=self._version)
 
-        print("Connection timed out..")
+        self.logger.error("Connection timed out..")
 
 
     def enable_message(self, msgClass, msgId):
@@ -193,8 +196,8 @@ class UbxStream(object):
                     counter += 1
                     break
 
-        print("Counter: {}".format(counter))
-        print(string)
+        self.logger.debug("Counter: {}".format(counter))
+        self.logger.debug(string)
 
 
     def __confirmation(self):
@@ -204,24 +207,25 @@ class UbxStream(object):
             try:
                 if(answer):
                     if(answer.ubx_class=='05' and answer.ubx_id=='01'):
-                        print("Acknowledged. CLS:{} ID:{}".format(answer.clsID, answer.msgID))
+                        self.logger.debug("Acknowledged. CLS:{} ID:{}".format(answer.clsID, answer.msgID))
                         return True
                     elif(answer.ubx_class=='05' and answer.ubx_id=='00'):
-                        print("Not acknowledged. CLS:{} ID:{}".format(answer.clsID, answer.msgID))
+                        self.logger.error("Not acknowledged. CLS:{} ID:{}".format(answer.clsID, answer.msgID))
                         return False
             except AttributeError:
                 pass
 
-        print("Message not received")
+        self.logger.error("Message not received")
         return False
 
 
 class UbxMessage(object):
-    def __init__(self, ubx_class, ubx_id, msg_type="rx", **kwargs):
+    def __init__(self, ubx_class, ubx_id, msg_type="rx", logger=None, **kwargs):
+        self.logger = logger or logging.getLogger(__name__)
         if(msg_type == "rx"):
             self._version = kwargs["version"]
-            print("Receiving")
-            print("{} {}".format(ubx_class, ubx_id))
+            self.logger.debug("Receiving")
+            self.logger.debug("{} {}".format(ubx_class, ubx_id))
             #NAV
             if(ubx_class == '01'):
                 message = {'02': lambda: self.__ubx_NAV_POSLLH(kwargs["dev"]),
@@ -273,12 +277,12 @@ class UbxMessage(object):
             elif(ubx_class == '28'):
                 print("")
             else:
-                print("Unsuported message class")
+                self.logger.error("Unsuported message class")
                 raise TypeError
 
 
         elif(msg_type == "tx"):
-            print("Transmitting")
+            self.logger.debug("Transmitting")
             #NAV
             if(ubx_class == '01'):
                 print("")
@@ -293,7 +297,7 @@ class UbxMessage(object):
                 print("")
             #CFG
             elif(ubx_class == '06'):
-                print("{} {}".format(ubx_class, ubx_id))
+                self.logger.debug("{} {}".format(ubx_class, ubx_id))
 
                 message = {'00': lambda: self.__ubx_CFG_PRT(kwargs["rate"]),
                            '01': lambda: self.__ubx_CFG_MSG(kwargs["msgClass"], kwargs["msgId"], kwargs["ioPorts"]),
@@ -329,11 +333,11 @@ class UbxMessage(object):
             elif(ubx_class == '28'):
                 print("")
             else:
-                print("Unsuported message class")
+                self.logger.error("Unsuported message class")
                 raise TypeError
 
         else:
-            print("Message type not supported.")
+            self.logger.error("Message type not supported.")
 
 
     ## UBX-NAV 0x01 ##
@@ -354,7 +358,7 @@ class UbxMessage(object):
                 self.ubx_id = '02'
 
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
 
@@ -373,7 +377,7 @@ class UbxMessage(object):
                 self.ubx_id = '04'
 
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     # Time_of_week in ms / Fractional time_of_week ns / Week number
@@ -394,7 +398,7 @@ class UbxMessage(object):
                 self.ubx_id = '06'
 
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
 
@@ -420,7 +424,7 @@ class UbxMessage(object):
                 self.ubx_class = '01'
                 self.ubx_id = '07'
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     ## UBX-ACK 0x05 ##
@@ -439,7 +443,7 @@ class UbxMessage(object):
                 self.ubx_id = '01'
 
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     # UBX-ACK-NAK (0x05 0x00)
@@ -456,7 +460,7 @@ class UbxMessage(object):
                 self.ubx_id = '00'
 
             except struct.error:
-                print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+                self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
 
@@ -482,7 +486,7 @@ class UbxMessage(object):
             self.ubx_class = '06'
             self.ubx_id = '00'
         except struct.error:
-            print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+            self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     # UBX-CFG-MSG (0x06 0x01)
@@ -496,7 +500,7 @@ class UbxMessage(object):
             self.ubx_id = '01'
 
         except struct.error:
-            print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+            self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
 
@@ -511,7 +515,7 @@ class UbxMessage(object):
             self.ubx_class = '06'
             self.ubx_id = '09'
         except struct.error:
-            print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+            self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     ## UBX-CFG-NAV5 (0x06 0x24)
@@ -527,7 +531,7 @@ class UbxMessage(object):
             self.ubx_class = '06'
             self.ubx_id = '24'
         except struct.error:
-            print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
+            self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     def __calc_checksum(self, ubx_class, ubx_id, payload):
@@ -564,5 +568,5 @@ class UbxMessage(object):
         if chk1==check1 and chk2==check2:
             return True
         else:
-            print("Checksum is incorrect")
+            self.logger.error("Checksum is incorrect")
             return False
