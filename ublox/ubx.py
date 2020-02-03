@@ -55,7 +55,7 @@ class UbxStream(object):
             if(self._dev.open):
                 return self._baudrate
             else:
-                self.logger.error(("Port is closed.")
+                self.logger.error("Port is closed.")
         except AttributeError:
             self.logger.error("Serial connection has not been initialized or assigned a baudrate yet.")
 
