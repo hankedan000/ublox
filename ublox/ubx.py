@@ -6,6 +6,8 @@ import logging
 import serial
 from serial.tools import list_ports
 
+logging.basicConfig(level=logging.INFO)
+
 class UbxStream(object):
     def __init__(self, dev=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
@@ -62,6 +64,7 @@ class UbxStream(object):
 
     @baudrate.setter
     def baudrate(self,baudrate):
+        self.logger.info("Configuring baudrate to {}".format(baudrate))
         y = UbxMessage('06','00', msg_type="tx", rate=baudrate, version=self._version)
         try:
             if(self.dev.writable):
@@ -104,8 +107,7 @@ class UbxStream(object):
                         else:
                             counter = 0
                     except serial.serialutil.SerialException:
-                        self.logger.error("Somethig went wrong")
-
+                        self.logger.error("Something went wrong")
                 else:
                     if self._version == 3:
                         ubx_class = binascii.hexlify(self.dev.read()).decode('utf-8')
@@ -120,6 +122,7 @@ class UbxStream(object):
 
 
     def enable_message(self, msgClass, msgId):
+        self.logger.info("Enabling message Class: {} ID: {}".format(msgClass,msgId))
         msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 1, 0, 0, 0, 0])
         self.dev.write(msg.msg)
         if(self.__confirmation()):
@@ -127,12 +130,18 @@ class UbxStream(object):
 
 
     def disable_message(self, msgClass, msgId):
+        self.logger.info("Disabling message Class: {} ID: {}".format(msgClass,msgId))
         #msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 0, 0, 0, 0, 0])
         msg = UbxMessage('06', '01', msg_type="tx", msgClass=msgClass, msgId=msgId, ioPorts=[0, 0, 0, 0, 0, 0])
         self.dev.write(msg.msg)
         if(self.__confirmation()):
             return msg
 
+    def cfg_rate(self,rate):
+        msg = UbxMessage('06','08', msg_type="tx", rate=rate, timeRef=0)
+        self.dev.write(msg.msg)
+        if(self.__confirmation()):
+            return msg
 
     def reset_config(self):
         clearMask, saveMask, loadMask, deviceMask = [255, 255, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [3]
@@ -172,6 +181,7 @@ class UbxStream(object):
     # class 0xF0: 0A, 09, 00, 01, 0D, 06, 02, 07, 03, 04, 41, 0F, 05, 08
     # class 0xF1: 00, 03, 04
     def disable_NMEA(self):
+        self.logger.info("Disabling all NMEA sentences")
         classes = [240, 241]
         ids1 = [10, 9, 0, 1, 13, 6, 2, 7, 3, 4, 65, 15, 5, 8]
         ids2 = [0, 3, 4]
@@ -301,6 +311,7 @@ class UbxMessage(object):
 
                 message = {'00': lambda: self.__ubx_CFG_PRT(kwargs["rate"]),
                            '01': lambda: self.__ubx_CFG_MSG(kwargs["msgClass"], kwargs["msgId"], kwargs["ioPorts"]),
+                           '08': lambda: self.__ubx_CFG_RATE(kwargs["rate"], kwargs["timeRef"]),
                            '09': lambda: self.__ubx_CFG_CFG(kwargs["clearMask"], kwargs["saveMask"], kwargs["loadMask"], kwargs["deviceMask"]),
                            '24': lambda: self.__ubx_CFG_NAV5(kwargs["dynModel"])
                 }
@@ -502,6 +513,28 @@ class UbxMessage(object):
         except struct.error:
             self.logger.error("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
+
+    # UBX-CFG-RATE (0x06 0x08)
+    def __ubx_CFG_RATE(self, rate, timeRef):
+        header, ubx_class, ubx_id, length = 46434, 6, 8, 6
+
+        rate = hex(rate)
+        rate = rate[2:]
+        while(len(rate) < 4):
+            rate = '0' + rate
+
+        rate1, rate2 = int(rate[2:4], 16), int(rate[:2], 16)
+
+        navRate = 1 # according to ublox ICD this value is a don't care
+        payload = [length, 0, rate1, rate2, navRate, 0, 0, timeRef]
+        checksum = self.__calc_checksum(ubx_class, ubx_id, payload)
+        payload = payload + checksum
+        try:
+            self.msg = struct.pack('>H12B', header, ubx_class, ubx_id, *payload)
+            self.ubx_class = '06'
+            self.ubx_id = '08'
+        except struct.error:
+            print("{} {}".format(sys.exc_info()[0], sys.exc_info()[1]))
 
 
     ## UBX-CFG-CFG (0x06 0x09)
